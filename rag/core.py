@@ -10,6 +10,8 @@ from pathlib import Path
 
 API_BASE = os.environ.get("API_BASE", "https://openrouter.ai/api/v1")
 API_KEY = os.environ.get("API_KEY", os.environ.get("OPENROUTER_API_KEY", ""))
+EMBED_API_BASE = os.environ.get("EMBED_API_BASE", API_BASE)
+EMBED_API_KEY = os.environ.get("EMBED_API_KEY", API_KEY)
 LLM_MODEL = os.environ.get("LLM_MODEL", "minimax/minimax-m2.7")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "baai/bge-m3")
 CHUNK_SIZE = int(os.environ.get("RAG_CHUNK_SIZE", "512"))
@@ -45,7 +47,10 @@ def llm(prompt: str, system: str | None = None) -> str:
 
 
 def embed(texts: list[str]) -> list[list[float]]:
-    r = _S.post(f"{API_BASE}/embeddings", headers=_headers(), json={
+    h = {}
+    if EMBED_API_KEY:
+        h["Authorization"] = f"Bearer {EMBED_API_KEY}"
+    r = _S.post(f"{EMBED_API_BASE}/embeddings", headers=h, json={
         "model": EMBED_MODEL, "input": texts,
     }, timeout=60)
     r.raise_for_status()
