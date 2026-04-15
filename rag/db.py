@@ -1,7 +1,7 @@
 """Chroma-backed vector store with hybrid BM25 + semantic search."""
 import math, re
 import chromadb
-from .core import embed, DATA_DIR
+from .core import DATA_DIR
 
 _TOK = re.compile(r"(?u)\w+")
 
@@ -12,17 +12,16 @@ def get_db() -> chromadb.ClientAPI:
 
 
 def get_collection(db: chromadb.ClientAPI | None = None):
+    """ChromaDB embeds documents automatically with its built-in model."""
     db = db or get_db()
-    return db.get_or_create_collection("chunks", metadata={"hnsw:space": "cosine"})
+    return db.get_or_create_collection("chunks")
 
 
 def upsert(chunks: list[dict], ctx_texts: list[str]):
-    """Store chunks with their contextualized text + embeddings."""
+    """Store chunks — ChromaDB generates embeddings automatically."""
     col = get_collection()
-    vecs = embed(ctx_texts)
     col.upsert(
         ids=[c["id"] for c in chunks],
-        embeddings=vecs,
         documents=ctx_texts,
         metadatas=[{"doc": c["doc"], "path": c["path"], "index": c["index"],
                     "text": c["text"]} for c in chunks],
@@ -31,14 +30,12 @@ def upsert(chunks: list[dict], ctx_texts: list[str]):
 
 
 def semantic_search(query: str, top_k: int = 100) -> list[tuple[str, float]]:
-    """Cosine similarity search via Chroma."""
+    """Cosine similarity search via Chroma (embeds query automatically)."""
     col = get_collection()
     if col.count() == 0:
         return []
-    qvec = embed([query])
-    results = col.query(query_embeddings=qvec, n_results=min(top_k, col.count()),
+    results = col.query(query_texts=[query], n_results=min(top_k, col.count()),
                         include=["distances"])
-    # Chroma returns cosine distance; convert to similarity
     return list(zip(results["ids"][0], [1 - d for d in results["distances"][0]]))
 
 
@@ -87,10 +84,8 @@ def hybrid_search(query: str, top_k: int = 10,
     if col.count() == 0:
         return []
 
-    # Semantic results from Chroma
     sem_hits = semantic_search(query, top_k=100)
 
-    # BM25 over all stored documents
     all_data = col.get(include=["documents", "metadatas"])
     bm25 = BM25(all_data["ids"], all_data["documents"])
     bm25_hits = bm25.search(query, top_k=100)
@@ -108,7 +103,6 @@ def hybrid_search(query: str, top_k: int = 10,
 
     ranked = sorted(fused.items(), key=lambda x: x[1], reverse=True)[:top_k]
 
-    # Hydrate results with metadata
     meta_map = dict(zip(all_data["ids"], all_data["metadatas"]))
     doc_map = dict(zip(all_data["ids"], all_data["documents"]))
     return [{"id": cid, "fused": round(f, 4),

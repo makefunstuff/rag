@@ -47,7 +47,7 @@ def cmd_search(args):
 
 
 def cmd_query(args):
-    from .core import llm, embed
+    from .core import llm
     from .db import hybrid_search
 
     q = " ".join(args.query)
@@ -69,7 +69,6 @@ def cmd_query(args):
 
 
 def cmd_eval(args):
-    from .core import embed
     from .db import hybrid_search
 
     pairs = json.loads(Path(args.pairs).read_text()) if args.pairs else [

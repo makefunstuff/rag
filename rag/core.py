@@ -1,7 +1,9 @@
-"""Config, LLM/embed client, chunking, contextual embeddings.
+"""Config, LLM client, chunking, contextual embeddings.
 
 Works with any OpenAI-compatible API: OpenRouter, OpenAI, Ollama, LM Studio,
-vLLM, Together, etc. Set API_BASE + API_KEY + model names.
+vLLM, Together, etc. Set API_BASE + API_KEY + LLM_MODEL.
+
+Embeddings are handled by ChromaDB's built-in model (no external API needed).
 """
 import hashlib, json, re, os, requests
 from pathlib import Path
@@ -10,10 +12,7 @@ from pathlib import Path
 
 API_BASE = os.environ.get("API_BASE", "https://openrouter.ai/api/v1")
 API_KEY = os.environ.get("API_KEY", os.environ.get("OPENROUTER_API_KEY", ""))
-EMBED_API_BASE = os.environ.get("EMBED_API_BASE", API_BASE)
-EMBED_API_KEY = os.environ.get("EMBED_API_KEY", API_KEY)
 LLM_MODEL = os.environ.get("LLM_MODEL", "minimax/minimax-m2.7")
-EMBED_MODEL = os.environ.get("EMBED_MODEL", "baai/bge-m3")
 CHUNK_SIZE = int(os.environ.get("RAG_CHUNK_SIZE", "512"))
 CHUNK_OVERLAP = int(os.environ.get("RAG_CHUNK_OVERLAP", "64"))
 DATA_DIR = Path(os.environ.get("RAG_DATA_DIR", "./data"))
@@ -27,34 +26,19 @@ _S = requests.Session()
 _S.headers["Content-Type"] = "application/json"
 
 
-def _headers():
-    h = {}
-    if API_KEY:
-        h["Authorization"] = f"Bearer {API_KEY}"
-    return h
-
-
 # ── LLM ─────────────────────────────────────────────────────────
 
 def llm(prompt: str, system: str | None = None) -> str:
     msgs = ([{"role": "system", "content": system}] if system else []) + \
            [{"role": "user", "content": prompt}]
-    r = _S.post(f"{API_BASE}/chat/completions", headers=_headers(), json={
+    h = {}
+    if API_KEY:
+        h["Authorization"] = f"Bearer {API_KEY}"
+    r = _S.post(f"{API_BASE}/chat/completions", headers=h, json={
         "model": LLM_MODEL, "messages": msgs, "temperature": 0.3, "max_tokens": 4096,
     }, timeout=120)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
-
-
-def embed(texts: list[str]) -> list[list[float]]:
-    h = {}
-    if EMBED_API_KEY:
-        h["Authorization"] = f"Bearer {EMBED_API_KEY}"
-    r = _S.post(f"{EMBED_API_BASE}/embeddings", headers=h, json={
-        "model": EMBED_MODEL, "input": texts,
-    }, timeout=60)
-    r.raise_for_status()
-    return [d["embedding"] for d in r.json()["data"]]
 
 
 # ── Chunking ────────────────────────────────────────────────────
@@ -133,7 +117,6 @@ def contextualize(doc_path: str, chunks: list[dict]) -> list[str]:
             descs = json.loads(resp)
         except Exception:
             descs = []
-        # Pad/truncate if LLM returned wrong count
         while len(descs) < len(texts):
             descs.append("")
         descs = descs[:len(texts)]
