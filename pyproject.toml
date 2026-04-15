@@ -1,0 +1,12 @@
+[project]
+name = "rag"
+version = "0.2.0"
+description = "Contextual RAG with hybrid BM25 + semantic search"
+requires-python = ">=3.11"
+dependencies = ["chromadb", "requests"]
+
+[tool.setuptools.packages.find]
+include = ["rag"]
+
+[project.scripts]
+rag = "rag.cli:main"
