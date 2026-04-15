@@ -28,13 +28,15 @@ _S.headers["Content-Type"] = "application/json"
 
 # ── LLM ─────────────────────────────────────────────────────────
 
+def _headers():
+    key = os.environ.get("API_KEY", os.environ.get("OPENROUTER_API_KEY", ""))
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
 def llm(prompt: str, system: str | None = None) -> str:
     msgs = ([{"role": "system", "content": system}] if system else []) + \
            [{"role": "user", "content": prompt}]
-    h = {}
-    if API_KEY:
-        h["Authorization"] = f"Bearer {API_KEY}"
-    r = _S.post(f"{API_BASE}/chat/completions", headers=h, json={
+    r = _S.post(f"{API_BASE}/chat/completions", headers=_headers(), json={
         "model": LLM_MODEL, "messages": msgs, "temperature": 0.3, "max_tokens": 4096,
     }, timeout=120)
     r.raise_for_status()

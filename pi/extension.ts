@@ -10,7 +10,7 @@ async function rag(pi: ExtensionAPI, cmd: string, args: string[], timeout = 120_
   if (!existsSync(venv))
     throw new Error(`rag not found. Run: cd ${RAG_DIR} && python3 -m venv .venv && .venv/bin/pip install -e .`);
   const r = await pi.exec("bash", ["-c",
-    `set -a; [ -f ~/.env ] && source ~/.env; set +a; cd ${RAG_DIR} && .venv/bin/rag ${cmd} ${args.join(" ")}`
+    `set -a; [ -f ${RAG_DIR}/.env.local ] && source ${RAG_DIR}/.env.local; set +a; cd ${RAG_DIR} && .venv/bin/rag ${cmd} ${args.join(" ")}`
   ], { timeout, env: { ...process.env } });
   if (r.code !== 0) throw new Error(`rag ${cmd} failed: ${r.stderr?.trim() || r.stdout?.trim()}`);
   return r.stdout.trim();
