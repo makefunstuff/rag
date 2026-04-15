@@ -29,6 +29,16 @@ def upsert(chunks: list[dict], ctx_texts: list[str]):
     return len(chunks)
 
 
+def delete_by_prefix(prefix: str) -> int:
+    """Delete all chunks whose ID starts with prefix (one file's chunks)."""
+    col = get_collection()
+    all_ids = col.get()["ids"]
+    to_delete = [cid for cid in all_ids if cid.startswith(prefix)]
+    if to_delete:
+        col.delete(ids=to_delete)
+    return len(to_delete)
+
+
 def semantic_search(query: str, top_k: int = 100) -> list[tuple[str, float]]:
     """Cosine similarity search via Chroma (embeds query automatically)."""
     col = get_collection()

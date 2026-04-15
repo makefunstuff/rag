@@ -1,4 +1,4 @@
-"""CLI: rag ingest | search | query | eval."""
+"""CLI: rag ingest | sync | search | query | eval."""
 import json, sys, time
 from argparse import ArgumentParser
 from pathlib import Path
@@ -28,6 +28,56 @@ def cmd_ingest(args):
         total += len(chunks)
         ingested += 1
     print(f"\n[ingest] done. {ingested} files, {total} chunks.")
+
+
+def cmd_sync(args):
+    import hashlib
+    from .core import chunk_file, contextualize, SUPPORTED, DATA_DIR
+    from .db import upsert, delete_by_prefix
+
+    p = Path(args.path)
+    if not p.exists():
+        print(f"[sync] not found: {p}"); sys.exit(1)
+
+    manifest_path = DATA_DIR / "manifest.json"
+    old = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+    new = {}
+
+    files = sorted(f for f in (p.glob(args.glob) if p.is_dir() else [p])
+                   if f.is_file() and f.suffix.lower() in SUPPORTED)
+
+    added, updated, unchanged, removed = 0, 0, 0, 0
+    for f in files:
+        h = hashlib.sha256(f.read_bytes()).hexdigest()[:16]
+        key = str(f.relative_to(p) if p.is_dir() else f)
+        new[key] = h
+        if key in old and old[key] == h:
+            unchanged += 1
+            continue
+        # Changed or new — re-ingest
+        chunks = chunk_file(f, root=p if p.is_dir() else None)
+        if not chunks:
+            continue
+        ctx = contextualize(str(f), chunks)
+        upsert(chunks, ctx)
+        if key in old:
+            updated += 1
+            print(f"[sync] updated {key} ({len(chunks)} chunks)")
+        else:
+            added += 1
+            print(f"[sync] added {key} ({len(chunks)} chunks)")
+
+    # Delete chunks from removed files
+    for key in old:
+        if key not in new:
+            stem = key.replace("/", "_").replace(" ", "_")
+            n = delete_by_prefix(stem)
+            removed += 1
+            print(f"[sync] removed {key} ({n} chunks)")
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(new, indent=2))
+    print(f"\n[sync] done. +{added} ~{updated} ={unchanged} -{removed}")
 
 
 def cmd_search(args):
@@ -96,6 +146,10 @@ def main():
     p.add_argument("path")
     p.add_argument("--glob", default="**/*")
 
+    p = sub.add_parser("sync", help="Sync: only re-ingest changed/new files, remove deleted")
+    p.add_argument("path")
+    p.add_argument("--glob", default="**/*")
+
     p = sub.add_parser("search", help="Hybrid search (no LLM)")
     p.add_argument("query", nargs="+")
     p.add_argument("-k", type=int, default=10)
@@ -111,7 +165,7 @@ def main():
     p.add_argument("--json", action="store_true")
 
     args = ap.parse_args()
-    {"ingest": cmd_ingest, "search": cmd_search,
+    {"ingest": cmd_ingest, "sync": cmd_sync, "search": cmd_search,
      "query": cmd_query, "eval": cmd_eval}[args.cmd](args)
 
 
